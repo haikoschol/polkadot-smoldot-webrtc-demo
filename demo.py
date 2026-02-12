@@ -16,7 +16,6 @@ class Colors:
     CLONE = "\033[34m"  # Blue
     BUILD = "\033[93m"  # Bright Yellow
     PNPM = "\033[36m"  # Cyan
-    CHAINSPEC = "\033[35m"  # Magenta
     INFO = "\033[37m"  # White
     ERROR = "\033[91m"  # Red
     SUCCESS = "\033[32m"  # Green
@@ -54,10 +53,6 @@ def check_node_modules_exists(path):
     """Check if node_modules directory exists"""
     node_modules = Path(path) / "node_modules"
     return node_modules.exists() and node_modules.is_dir()
-
-def check_chain_spec_exists(path):
-    """Check if chain spec file exists"""
-    return Path(path).exists()
 
 # --- Task Execution Functions ---
 
@@ -247,60 +242,29 @@ def task_pnpm_install(papi_dir, task_result, dependency=None):
     finally:
         task_result.completed.set()
 
-def task_generate_chain_spec(polkadot_bin, output_path, task_result, dependency=None):
-    """Generate dev chain spec file"""
+def task_create_placeholder_file(file_path, task_result, dependency=None):
+    """Create an empty placeholder file"""
     try:
         # Wait for dependency if specified
         if dependency:
             dependency.completed.wait()
             if not dependency.success:
-                print_log("ChainSpec", "Skipping chain spec generation due to dependency failure", Colors.WARN)
+                print_log("Placeholder", "Skipping placeholder creation due to dependency failure", Colors.WARN)
                 task_result.completed.set()
                 return
 
-        # Check if already exists, but regenerate if polkadot was rebuilt
-        if check_chain_spec_exists(output_path):
-            # If polkadot build was skipped (already existed), skip chainspec too
-            if dependency and dependency.skipped:
-                print_log("ChainSpec", f"Chain spec {output_path} already exists, skipping", Colors.SUCCESS)
-                task_result.success = True
-                task_result.completed.set()
-                return
-            else:
-                # Polkadot was rebuilt, so regenerate chainspec
-                print_log("ChainSpec", "Polkadot was rebuilt, regenerating chain spec...", Colors.CHAINSPEC)
+        # Create parent directories if they don't exist
+        file_path_obj = Path(file_path)
+        file_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-        print_log("ChainSpec", "Generating dev chain spec...", Colors.CHAINSPEC)
-
-        cmd = [polkadot_bin, "build-spec", "--dev", "--disable-default-bootnode", "--raw"]
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-
-        stdout, stderr = process.communicate()
-
-        if INIT_FAILED.is_set():
-            return
-
-        rc = process.returncode
-        if rc == 0:
-            # Write output to file
-            with open(output_path, 'w') as f:
-                f.write(stdout)
-            print_log("ChainSpec", f"Successfully generated {output_path}", Colors.SUCCESS)
-            task_result.success = True
-        else:
-            error_msg = f"Failed to generate chain spec (exit code {rc}): {stderr}"
-            print_log("ChainSpec", error_msg, Colors.ERROR)
-            task_result.error_message = error_msg
-            INIT_FAILED.set()
+        # Create empty file
+        file_path_obj.touch()
+        print_log("Placeholder", f"Created placeholder file: {file_path}", Colors.SUCCESS)
+        task_result.success = True
 
     except Exception as e:
-        error_msg = f"Exception generating chain spec: {e}"
-        print_log("ChainSpec", error_msg, Colors.ERROR)
+        error_msg = f"Exception creating placeholder file: {e}"
+        print_log("Placeholder", error_msg, Colors.ERROR)
         task_result.error_message = error_msg
         INIT_FAILED.set()
     finally:
@@ -380,21 +344,21 @@ def initialize_demo():
         print_log("Init", "Initialization failed during build phase", Colors.ERROR)
         return False
 
-    # Phase 3: Generate chain spec
-    print_log("Init", "Phase 3: Generating chain spec...", Colors.INFO)
+    # Phase 3: Create placeholder chainspec file for papi-console
+    print_log("Init", "Phase 3: Creating placeholder chainspec file...", Colors.INFO)
 
-    chainspec_result = TaskResult("generate-chainspec")
-    chainspec_thread = threading.Thread(
-        target=task_generate_chain_spec,
-        args=("./polkadot-sdk/target/debug/polkadot", "./dev-chain-spec.json", chainspec_result, polkadot_result)
+    placeholder_result = TaskResult("create-placeholder")
+    placeholder_thread = threading.Thread(
+        target=task_create_placeholder_file,
+        args=("./papi-console/src/state/chains/chainspecs/polkadot-dev-webrtc.ts", placeholder_result, pnpm_result)
     )
 
-    chainspec_thread.start()
-    chainspec_thread.join()
+    placeholder_thread.start()
+    placeholder_thread.join()
 
-    # Check if chain spec generation failed
+    # Check if placeholder creation failed
     if INIT_FAILED.is_set():
-        print_log("Init", "Initialization failed during chain spec generation", Colors.ERROR)
+        print_log("Init", "Initialization failed during placeholder creation", Colors.ERROR)
         return False
 
     print_log("Init", "Initialization completed successfully!", Colors.SUCCESS)
