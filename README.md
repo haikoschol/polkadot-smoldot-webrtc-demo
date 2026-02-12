@@ -35,8 +35,8 @@ In terminal/tmux window A:
 In terminal/tmux window B:
 
 - clone [`haikoschol/papi-console`](https://github.com/haikoschol/papi-console) and check out branch `webrtc-demo` (e.g. in directory `./papi-console`)
-- install dependencies (`pnpm install`)
-- run dev server (`pnpm dev`)
+- install dependencies (`corepack pnpm install`)
+- run dev server (`corepack pnpm dev`)
 
 ### Running the Polkadot Node
 
