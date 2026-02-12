@@ -16,7 +16,7 @@ This document describes how to run a local Polkadot dev chain node with libp2p-w
 
 ## Automated Demo
 
-Execute `python3 demo.py /path/to/chrome` in a terminal that is not running tmux. Make sure no process is listening on TCP port 5173 and that Chrome is not running yet. Wait for Chrome to launch and navigate to [http://localhost:5173/](http://localhost:5173/). Once the console has loaded, open  the dropdown in the upper left corner, type "webrtc" and select "Polkadot Dev (WebRTC)".
+Execute `python3 demo.py /path/to/chrome` in a terminal that is not running tmux. Make sure no process is listening on TCP port 5173 and that Chrome is not running yet. Wait for Chrome to launch and navigate to [http://localhost:5173/explorer#networkId=polkadot-dev-webrtc&endpoint=light-client](http://localhost:5173/explorer#networkId=polkadot-dev-webrtc&endpoint=light-client).
 
 Once Smoldot has connected, play around with it, make some transfers, etc. then quit Chrome. You should see a table in the terminal with information about subtreams between dialer (Chrome) and listener (the node), what libp2p protobuf flags were set in the messages and what multistream-select protocol negotiation took place.
 
