@@ -11,7 +11,7 @@ This document describes how to run a local Polkadot dev chain node with libp2p-w
 - Node.js
 - pnpm
 - Python 3
-- tmux (optional, used in `demo.py`)
+- tmux (optional, used in the automated demo)
 - Wireshark, incl. `text2pcap` executable (optional, for traffic analysis)
 
 ## Automated Demo

@@ -10,8 +10,10 @@ import time
 
 # --- Configuration & State ---
 WEBRTC_ADDR = None
+WEBSOCKET_ADDR = None
 RPC_SERVER_READY = False
 ADDR_LOCK = threading.Lock()
+LOG_FILE = None
 
 class Colors:
     RESET = "\033[0m"
@@ -22,15 +24,24 @@ class Colors:
 
 def print_log(source, message, color):
     timestamp = time.strftime("%H:%M:%S")
+    # Print to console with color
     sys.stdout.write(f"{color}[{timestamp}] [{source}] {message}{Colors.RESET}\n")
     sys.stdout.flush()
+
+    # Write to log file without color codes
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, 'a') as f:
+                f.write(f"[{timestamp}] [{source}] {message}\n")
+        except Exception as e:
+            sys.stderr.write(f"Error writing to log file: {e}\n")
 
 def fetch_chainspec_from_node():
     """Fetch chainspec from running Polkadot node via JSON-RPC with retries"""
     import urllib.request
     import urllib.error
 
-    url = "http://127.0.0.1:9944"
+    url = f"http://{ARGS.ip}:9944"
     payload = {
         "id": 1,
         "jsonrpc": "2.0",
@@ -88,7 +99,7 @@ def generate_ts_file(address):
         print_log("TS_Gen", f"Error parsing chainspec: {e}", Colors.WARN)
         return
 
-    # Replace bootNodes array with only our WebRTC address
+    # Replace bootNodes array with only our WebRTC/Websocket address
     spec_data['bootNodes'] = [address]
 
     # Create the TypeScript content
@@ -103,20 +114,23 @@ def generate_ts_file(address):
         print_log("TS_Gen", f"Error writing TS file: {e}", Colors.WARN)
 
 def run_polkadot():
-    global WEBRTC_ADDR, RPC_SERVER_READY
+    global WEBRTC_ADDR, WEBSOCKET_ADDR, RPC_SERVER_READY
 
     cmd = [
         ARGS.polkadot_bin,
         "--dev",
         "-lsub-libp2p=debug",
         "-llitep2p=debug",
+        "-llitep2p::notification::handle=error",  # Enable notification send logging
         "-lsub-libp2p::peerset=trace",
         "-lsub-libp2p::behaviour=debug",
         f"--listen-addr=/ip4/{ARGS.ip}/tcp/30333",
+        f"--listen-addr=/ip4/{ARGS.ip}/tcp/9945/ws",
         f"--listen-addr=/ip4/{ARGS.ip}/udp/30334/webrtc-direct",
         "--sync=full",
         "--rpc-cors=all",
         "--unsafe-rpc-external",
+        "--rpc-methods=unsafe",  # Allow all RPC methods
         "--rpc-max-response-size=26214400" # 25MB to fit chainspec
     ]
 
@@ -135,7 +149,8 @@ def run_polkadot():
         os._exit(1)
 
     # Patterns to detect
-    addr_pattern = re.compile(r"listening on:\s+(/.*(?:webrtc|webrtc-direct).*certhash.*p2p.*)", re.IGNORECASE)
+    webrtc_pattern = re.compile(r"listening on:\s+(/.*(webrtc|webrtc-direct).*certhash.*p2p.*)", re.IGNORECASE)
+    websocket_pattern = re.compile(r"listening on:\s+(/.*/tcp/\d+/ws/p2p/\w+)", re.IGNORECASE)
     rpc_pattern = re.compile(r"Running JSON-RPC server", re.IGNORECASE)
 
     ts_file_generated = False
@@ -149,13 +164,22 @@ def run_polkadot():
             print_log("Polkadot", clean_line, Colors.POLKADOT)
 
             # Check for WebRTC address
-            addr_match = addr_pattern.search(clean_line)
-            if addr_match:
-                found_addr = addr_match.group(1).strip()
+            webrtc_match = webrtc_pattern.search(clean_line)
+            if webrtc_match:
+                found_addr = webrtc_match.group(1).strip()
                 with ADDR_LOCK:
                     if WEBRTC_ADDR != found_addr:
                         WEBRTC_ADDR = found_addr
-                        print_log("System", f"Captured Address: {WEBRTC_ADDR}", Colors.SUCCESS)
+                        print_log("System", f"Captured WebRTC Address: {WEBRTC_ADDR}", Colors.SUCCESS)
+
+            # Check for WebSocket address
+            websocket_match = websocket_pattern.search(clean_line)
+            if websocket_match:
+                found_addr = websocket_match.group(1).strip()
+                with ADDR_LOCK:
+                    if WEBSOCKET_ADDR != found_addr:
+                        WEBSOCKET_ADDR = found_addr
+                        print_log("System", f"Captured WebSocket Address: {WEBSOCKET_ADDR}", Colors.SUCCESS)
 
             # Check for RPC server ready
             rpc_match = rpc_pattern.search(clean_line)
@@ -164,12 +188,19 @@ def run_polkadot():
                     RPC_SERVER_READY = True
                     print_log("System", "RPC server is ready", Colors.SUCCESS)
 
-            # Generate TS file only when both conditions are met
+            # Generate TS file when address and RPC server are ready
             with ADDR_LOCK:
-                if WEBRTC_ADDR and RPC_SERVER_READY and not ts_file_generated:
-                    print_log("System", "Both WebRTC address and RPC server ready, generating chainspec...", Colors.SUCCESS)
+                # Choose which address to use based on --transport flag
+                chosen_addr = None
+                if ARGS.transport == "webrtc" and WEBRTC_ADDR:
+                    chosen_addr = WEBRTC_ADDR
+                elif ARGS.transport == "websocket" and WEBSOCKET_ADDR:
+                    chosen_addr = WEBSOCKET_ADDR
+
+                if chosen_addr and RPC_SERVER_READY and not ts_file_generated:
+                    print_log("System", f"Using {ARGS.transport} address and RPC server ready, generating chainspec...", Colors.SUCCESS)
                     # Run in background thread so we can continue reading logs
-                    fetch_thread = threading.Thread(target=generate_ts_file, args=(WEBRTC_ADDR,))
+                    fetch_thread = threading.Thread(target=generate_ts_file, args=(chosen_addr,))
                     fetch_thread.daemon = True
                     fetch_thread.start()
                     ts_file_generated = True
@@ -181,11 +212,28 @@ def run_polkadot():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ip", default="127.0.0.1")
-    parser.add_argument("--polkadot-bin", default="./target/debug/polkadot")
-    # New argument for the output file
-    parser.add_argument("--ts-output", required=True, help="Path to write the .ts file (e.g., src/local-chain.ts)")
+    parser.add_argument("--polkadot-bin", default="./polkadot-sdk/target/debug/polkadot")
+
+    parser.add_argument("--ts-output", default="./papi-console/src/state/chains/chainspecs/polkadot-dev-webrtc.ts",
+                        help="Path to write the .ts file (e.g., src/local-chain.ts)")
+
+    parser.add_argument("--transport", choices=["webrtc", "websocket"], default="webrtc",
+                        help="Transport to use in chainspec bootNodes (default: webrtc)")
+
+    parser.add_argument("--log-file", default=None,
+                        help="Path to write log file (e.g., node.log). Logging to file is disabled by default.")
 
     ARGS = parser.parse_args()
+    LOG_FILE = ARGS.log_file
+
+    # Initialize log file only when --log-file is passed
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, 'w') as f:
+                f.write(f"=== Log started at {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            print_log("System", f"Logging to {LOG_FILE}", Colors.SUCCESS)
+        except Exception as e:
+            print_log("System", f"Warning: Could not initialize log file {LOG_FILE}: {e}", Colors.WARN)
 
     try:
         run_polkadot()
