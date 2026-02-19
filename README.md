@@ -71,3 +71,17 @@ Once running, follow the instructions in the "Automated Demo" section. Make sure
 - there's probably a lot of messages so try the CSV export (`--csv`)
 - open the `.pcapng` file in Wireshark (configure it to parse the schema in `./litep2p-perf/smoldot-automation/protobuf/webrtc.proto`)
 
+### Using WebSocket transport instead of WebRTC
+
+By default `node.py` uses the WebRTC-direct address as the bootnode in the generated chainspec. To use a plain WebSocket connection instead, pass `--transport websocket`:
+
+```
+$ python3 node.py --polkadot-bin ./polkadot-sdk/target/debug/polkadot --ts-output ./papi-console/src/state/chains/chainspecs/polkadot-dev-webrtc.ts --transport websocket
+```
+
+Additionally, Smoldot's `forbidWs` option must be set to `false` in `papi-console/src/state/chains/smoldot.ts`, otherwise Smoldot will refuse to connect over unencrypted WebSocket connections:
+
+```ts
+// papi-console/src/state/chains/smoldot.ts
+forbidWs: false,
+```
