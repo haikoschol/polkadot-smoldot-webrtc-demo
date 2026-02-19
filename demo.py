@@ -180,13 +180,72 @@ def task_cargo_build_bin(repo_dir, package, binary_path, task_result, dependency
     finally:
         task_result.completed.set()
 
-def task_pnpm_install(papi_dir, task_result, dependency=None):
-    """Install pnpm dependencies"""
+def task_npm_build(work_dir, task_result, dependency=None):
+    """Run npm install then npm run build in work_dir"""
     try:
-        # Wait for dependency if specified
         if dependency:
             dependency.completed.wait()
             if not dependency.success:
+                print_log("NPM", f"Skipping npm build in {work_dir} due to dependency failure", Colors.WARN)
+                task_result.completed.set()
+                return
+
+        for npm_cmd in [["npm", "install"], ["npm", "run", "build"]]:
+            if INIT_FAILED.is_set():
+                return
+
+            cmd_str = " ".join(npm_cmd)
+            print_log("NPM", f"Running '{cmd_str}' in {work_dir}...", Colors.BUILD)
+
+            process = subprocess.Popen(
+                npm_cmd,
+                cwd=work_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
+
+            while True:
+                if INIT_FAILED.is_set():
+                    process.terminate()
+                    return
+
+                line = process.stdout.readline()
+                if not line and process.poll() is not None:
+                    break
+                if line:
+                    clean_line = line.strip()
+                    if clean_line:
+                        print_log("NPM", f"[{Path(work_dir).name}] {clean_line}", Colors.BUILD)
+
+            rc = process.poll()
+            if rc != 0:
+                error_msg = f"'{cmd_str}' failed in {work_dir} (exit code {rc})"
+                print_log("NPM", error_msg, Colors.ERROR)
+                task_result.error_message = error_msg
+                INIT_FAILED.set()
+                return
+
+        print_log("NPM", f"Successfully built {work_dir}", Colors.SUCCESS)
+        task_result.success = True
+
+    except Exception as e:
+        error_msg = f"Exception running npm build in {work_dir}: {e}"
+        print_log("NPM", error_msg, Colors.ERROR)
+        task_result.error_message = error_msg
+        INIT_FAILED.set()
+    finally:
+        task_result.completed.set()
+
+def task_pnpm_install(papi_dir, task_result, dependencies=None):
+    """Install pnpm dependencies"""
+    try:
+        # Wait for all dependencies if specified
+        if dependencies:
+            for dep in dependencies:
+                dep.completed.wait()
+            if any(not dep.success for dep in dependencies):
                 print_log("PNPM", "Skipping pnpm install due to dependency failure", Colors.WARN)
                 task_result.completed.set()
                 return
@@ -281,6 +340,7 @@ def initialize_demo():
         ("https://github.com/ChainSafe/polkadot-sdk", "haiko-webrtc-demo", "./polkadot-sdk"),
         ("https://github.com/haikoschol/papi-console", "webrtc-demo", "./papi-console"),
         ("https://github.com/ChainSafe/litep2p-perf", "haiko-capture-traffic", "./litep2p-perf"),
+        ("https://github.com/ChainSafe/smoldot", "haiko-webrtc-deadlock-fix", "./smoldot"),
     ]
 
     # Phase 1: Clone repositories in parallel
@@ -312,6 +372,7 @@ def initialize_demo():
 
     polkadot_result = TaskResult("build-polkadot")
     pcap_result = TaskResult("build-pcap-analyzer")
+    smoldot_wasm_result = TaskResult("build-smoldot-wasm")
     pnpm_result = TaskResult("pnpm-install")
 
     polkadot_thread = threading.Thread(
@@ -325,18 +386,27 @@ def initialize_demo():
         kwargs={"bin_name": "pcap-analyzer"}
     )
 
+    smoldot_wasm_thread = threading.Thread(
+        target=task_npm_build,
+        args=("./smoldot/wasm-node/javascript", smoldot_wasm_result, clone_results[3])
+    )
+
+    # pnpm install waits for both the papi-console clone and the smoldot wasm build
     pnpm_thread = threading.Thread(
         target=task_pnpm_install,
-        args=("./papi-console", pnpm_result, clone_results[1])
+        args=("./papi-console", pnpm_result),
+        kwargs={"dependencies": [clone_results[1], smoldot_wasm_result]}
     )
 
     polkadot_thread.start()
     pcap_thread.start()
+    smoldot_wasm_thread.start()
     pnpm_thread.start()
 
     # Wait for all builds to complete
     polkadot_thread.join()
     pcap_thread.join()
+    smoldot_wasm_thread.join()
     pnpm_thread.join()
 
     # Check if any build failed

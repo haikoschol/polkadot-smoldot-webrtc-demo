@@ -22,13 +22,23 @@ Once Smoldot has connected, play around with it, make some transfers, etc. then 
 
 ## Manual Demo
 
+If you don't want to run `demo.py`, perform the below steps manually to run the demo.
+
 ### Building the Polkadot Node
 
 In terminal/tmux window A:
 
-- clone [`ChainSafe/polkadot-sdk`](https://github.com/ChainSafe/polkadot-sdk/ ) and check out branch `haiko-webrtc-demo` (e.g. in directory `./polkadot-sdk`)
+- clone [`ChainSafe/polkadot-sdk`](https://github.com/ChainSafe/polkadot-sdk/) and check out branch `haiko-webrtc-demo` (e.g. in directory `./polkadot-sdk`)
 - build Polkadot (`cargo build -p polkadot`)
 - build a dev chainspec (`./target/debug/polkadot build-spec --dev --raw > dev-chain-spec.json`)
+
+### Building Smoldot
+
+In terminal/tmux window B:
+
+- clone [`ChainSafe/smoldot`](https://github.com/ChainSafe/smoldot/) and check out branch `haiko-webrtc-deadlock-fix` (e.g. in directory `./smoldot`)
+- install dependencies (`cd smoldot/wasm-node/javascript && npm install`)
+- build wasm light client (`npm run dev` (also in directory `smoldot/wasm-node/javascript`))
 
 ### PAPI Console
 
