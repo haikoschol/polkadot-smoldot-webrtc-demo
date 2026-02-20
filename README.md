@@ -2,23 +2,27 @@
 
 ## Overview
 
-This document describes how to run a local Polkadot dev chain node with libp2p-webrtc-direct transport enabled in litep2p and connect the PAPI Console to it using Smoldot.
+This document describes how to run a local Polkadot dev chain node with libp2p-webrtc-direct transport enabled in litep2p and connect the PAPI Console
+to it using Smoldot.
 
 ## Requirements
 
 - git
 - Rust toolchain
 - Node.js
-- pnpm
 - Python 3
 - tmux (optional, used in the automated demo)
-- Wireshark, incl. `text2pcap` executable (optional, for traffic analysis)
+- Wireshark, incl. `text2pcap` executable (optional, used in the automated demo)
 
 ## Automated Demo
 
-Execute `python3 demo.py /path/to/chrome` in a terminal that is not running tmux. Make sure no process is listening on TCP port 5173 and that Chrome is not running yet. Wait for Chrome to launch and navigate to [http://localhost:5173/explorer#networkId=polkadot-dev-webrtc&endpoint=light-client](http://localhost:5173/explorer#networkId=polkadot-dev-webrtc&endpoint=light-client).
+Execute `python3 demo.py /path/to/chrome` in a terminal that is not running tmux. Make sure no process is listening on TCP ports 5173 and 8080 and that
+Chrome is not running yet. Wait for Chrome to launch and open to PAPI Console once the chainspec has been fetched from the running node. While you wait,
+copy Alice's address displayed on the loading page.
 
-Once Smoldot has connected, play around with it, make some transfers, etc. then quit Chrome. You should see a table in the terminal with information about subtreams between dialer (Chrome) and listener (the node), what libp2p protobuf flags were set in the messages and what multistream-select protocol negotiation took place.
+Once Smoldot has connected, play around with it, make a storage query to fetch Alice's balance, etc. then quit Chrome. A CSV file will have been written
+with information about subtreams between dialer (Chrome) and listener (the node), what libp2p protobuf flags were set in the messages, what
+multistream-select protocol negotiation took place, etc.
 
 ## Manual Demo
 
@@ -89,7 +93,8 @@ By default `node.py` uses the WebRTC-direct address as the bootnode in the gener
 $ python3 node.py --polkadot-bin ./polkadot-sdk/target/debug/polkadot --ts-output ./papi-console/src/state/chains/chainspecs/polkadot-dev-webrtc.ts --transport websocket
 ```
 
-Additionally, Smoldot's `forbidWs` option must be set to `false` in `papi-console/src/state/chains/smoldot.ts`, otherwise Smoldot will refuse to connect over unencrypted WebSocket connections:
+Additionally, Smoldot's `forbidWs` option must be set to `false` in `papi-console/src/state/chains/smoldot.ts`, otherwise Smoldot will refuse to connect over
+unencrypted WebSocket connections:
 
 ```ts
 // papi-console/src/state/chains/smoldot.ts
