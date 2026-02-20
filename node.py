@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import http.server
+import socketserver
 import subprocess
 import threading
 import re
@@ -14,6 +16,86 @@ WEBSOCKET_ADDR = None
 RPC_SERVER_READY = False
 ADDR_LOCK = threading.Lock()
 LOG_FILE = None
+LOADING_PORT = 8080
+
+LOADING_PAGE_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polkadot/Smoldot WebRTC Demo Loading...</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d0d0d;
+            color: #e0e0e0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .card {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-radius: 12px;
+            padding: 3rem 2.5rem;
+            max-width: 620px;
+            width: 90%;
+            text-align: center;
+        }
+        .spinner-wrap {
+            width: 56px;
+            height: 56px;
+            margin: 0 auto 2rem;
+            position: relative;
+        }
+        .spinner-wrap .dot {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: #e6007a;
+        }
+        .spinner-wrap::after {
+            content: '';
+            position: absolute;
+            inset: -6px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            border-top-color: #e6007a;
+            animation: spin 1.2s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #ffffff;
+            margin-bottom: 1.25rem;
+        }
+        p {
+            font-size: 0.95rem;
+            line-height: 1.7;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner-wrap"><div class="dot"></div></div>
+        <h1>Polkadot/Smoldot WebRTC Demo Loading...</h1>
+        <p>The node is currently starting up.</p><br/>
+        <p>Once the RPC endpoint responds with the chainspec, PAPI Console will be opened
+        in the browser. Wait until blocks appear and play around with it. For example, run
+        a storage query to fetch the balance of Alice (<code>15oF4uVJwmo4TdGW7VfQxNLavjCXviqxT9S1MgbjMNHr6Sp5</code>).</p><br/>
+        <p>Then quit Chrome to ensure that the pcapng file containing the WebRTC network
+        traffic gets written to disk. This file will then be processed by the pcap-analyzer
+        tool to create a CSV file with information about substreams opening/closing,
+        multistream-select negotiation, payload sizes, etc.</p>
+    </div>
+</body>
+</html>
+"""
 
 class Colors:
     RESET = "\033[0m"
@@ -110,8 +192,31 @@ def generate_ts_file(address):
         with open(ARGS.ts_output, 'w') as f:
             f.write(ts_content)
         print_log("TS_Gen", f"Updated {ARGS.ts_output} with chainspec and bootnode!", Colors.SUCCESS)
+        return True
     except Exception as e:
         print_log("TS_Gen", f"Error writing TS file: {e}", Colors.WARN)
+
+class LoadingPageHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(LOADING_PAGE_HTML.encode('utf-8'))
+
+    def log_message(self, format, *args):
+        pass  # Suppress request logs
+
+def start_loading_server():
+    with socketserver.TCPServer(("", LOADING_PORT), LoadingPageHandler) as httpd:
+        httpd.serve_forever()
+
+def generate_ts_and_navigate(address):
+    """Generate the chainspec TS file, then navigate Chrome to the demo URL if --chrome-bin is set."""
+    success = generate_ts_file(address)
+    if success and ARGS.chrome_bin:
+        url = "http://localhost:5173/explorer#networkId=polkadot-dev-webrtc&endpoint=light-client"
+        print_log("System", f"Navigating Chrome to {url}", Colors.SUCCESS)
+        subprocess.Popen([ARGS.chrome_bin, url])
 
 def run_polkadot():
     global WEBRTC_ADDR, WEBSOCKET_ADDR, RPC_SERVER_READY
@@ -200,7 +305,7 @@ def run_polkadot():
                 if chosen_addr and RPC_SERVER_READY and not ts_file_generated:
                     print_log("System", f"Using {ARGS.transport} address and RPC server ready, generating chainspec...", Colors.SUCCESS)
                     # Run in background thread so we can continue reading logs
-                    fetch_thread = threading.Thread(target=generate_ts_file, args=(chosen_addr,))
+                    fetch_thread = threading.Thread(target=generate_ts_and_navigate, args=(chosen_addr,))
                     fetch_thread.daemon = True
                     fetch_thread.start()
                     ts_file_generated = True
@@ -220,11 +325,20 @@ if __name__ == "__main__":
     parser.add_argument("--transport", choices=["webrtc", "websocket"], default="webrtc",
                         help="Transport to use in chainspec bootNodes (default: webrtc)")
 
+    parser.add_argument("--chrome-bin", default=None,
+                        help="Path to Chrome binary. If set, navigates Chrome to the demo URL after the chainspec is generated.")
+
     parser.add_argument("--log-file", default=None,
                         help="Path to write log file (e.g., node.log). Logging to file is disabled by default.")
 
     ARGS = parser.parse_args()
     LOG_FILE = ARGS.log_file
+
+    # Start loading page server when running as part of the automated demo
+    if ARGS.chrome_bin:
+        server_thread = threading.Thread(target=start_loading_server, daemon=True)
+        server_thread.start()
+        print_log("System", f"Loading page available at http://localhost:{LOADING_PORT}", Colors.SUCCESS)
 
     # Initialize log file only when --log-file is passed
     if LOG_FILE:

@@ -434,11 +434,71 @@ def initialize_demo():
     print_log("Init", "Initialization completed successfully!", Colors.SUCCESS)
     return True
 
+# --- Demo Orchestration ---
+
+def run_demo(chrome_bin):
+    """Launch the demo in a tmux session with 3 stacked panes"""
+    project_root = str(Path(__file__).parent.resolve())
+    papi_console_dir = str(Path(project_root) / "papi-console")
+    session = "polkadot-smoldot-demo"
+
+    if subprocess.run(["which", "tmux"], capture_output=True).returncode != 0:
+        print_log("Demo", "Error: tmux is not installed", Colors.ERROR)
+        sys.exit(1)
+
+    pcap_analyzer = f"{project_root}/litep2p-perf/target/debug/pcap-analyzer"
+    chrome_cmd = (
+        f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest http://localhost:8080'
+        " --auto-open-devtools-for-tabs"
+        " --enable-logging=stderr --log-level=0 --v=0"
+        " --vmodule='*/webrtc/*=1'"
+        ' 2>&1 | grep -F SCTP_PACKET | text2pcap -D -t %H:%M:%S.%f -i 132 - "$OUT"'
+        f' && "{pcap_analyzer}" --all-messages --analyze-payload --csv "$OUT"'
+    )
+    node_cmd = f"python3 {project_root}/node.py --chrome-bin '{chrome_bin}'"
+    pnpm_cmd = "corepack pnpm dev"
+
+    print_log("Demo", f"Starting tmux session '{session}'...", Colors.INFO)
+
+    # Create new detached session; pane 0.0 will be the top pane (node.py)
+    subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", project_root])
+
+    # Split pane 0.0 to create pane 0.1 below it (Chrome, middle)
+    subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.0", "-c", project_root])
+
+    # Split pane 0.1 to create pane 0.2 below it (pnpm dev, bottom)
+    subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.1", "-c", papi_console_dir])
+
+    # Even out pane heights
+    subprocess.run(["tmux", "select-layout", "-t", session, "even-vertical"])
+
+    # Send commands: top=node.py, middle=Chrome, bottom=pnpm dev
+    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
+    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
+    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
+
+    print_log("Demo", "Attaching to tmux session...", Colors.SUCCESS)
+
+    # Replace current process with tmux attach
+    os.execlp("tmux", "tmux", "attach-session", "-t", session)
+
 # --- Main ---
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Automated demo for Polkadot/Smoldot WebRTC"
+        description="Automated demo for Polkadot/Smoldot WebRTC",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "examples:\n"
+            "  python3 demo.py --init-only\n"
+            "  python3 demo.py /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome\n"
+            "  python3 demo.py /path/to/chrome --skip-init\n"
+        )
+    )
+    parser.add_argument(
+        "chrome_bin",
+        nargs="?",
+        help="Path to the Chrome binary. Required unless --init-only is set."
     )
     parser.add_argument(
         "--skip-init",
@@ -451,22 +511,27 @@ def main():
         help="Run initialization only, then exit"
     )
 
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
+
     args = parser.parse_args()
 
+    if not args.init_only and not args.chrome_bin:
+        parser.print_help()
+        sys.exit(1)
+
     try:
-        # Run initialization unless skipped
         if not args.skip_init:
             success = initialize_demo()
             if not success:
                 print_log("System", "Initialization failed, exiting", Colors.ERROR)
                 sys.exit(1)
 
-        # Exit if init-only mode
         if args.init_only:
             sys.exit(0)
 
-        # TODO: Rest of demo orchestration (not in scope for this plan)
-        print_log("System", "Demo orchestration not yet implemented", Colors.INFO)
+        run_demo(args.chrome_bin)
 
     except KeyboardInterrupt:
         print_log("System", "Interrupted by user, shutting down...", Colors.WARN)
