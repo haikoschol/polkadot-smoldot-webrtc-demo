@@ -10,6 +10,7 @@ to it using Smoldot.
 - git
 - Rust toolchain (incl. target `wasm32-unknown-unknown`)
 - protobuf compiler
+- Polkadot-SDK deps (llvm, clang, openssl, libudev)
 - Node.js
 - Python 3
 - tmux (optional, used in the automated demo)
