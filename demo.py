@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import socket
 import subprocess
 import threading
 import sys
@@ -436,6 +437,18 @@ def initialize_demo():
 
 # --- Demo Orchestration ---
 
+def _wait_for_port(port, host="127.0.0.1", timeout=30):
+    """Block until a TCP connection to host:port succeeds, or timeout expires."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=1):
+                return
+        except OSError:
+            time.sleep(0.25)
+    print_log("Demo", f"Warning: port {port} not ready after {timeout}s, launching Chrome anyway", Colors.WARN)
+
+
 def run_demo(chrome_bin, log_file=None, transport="webrtc"):
     """Launch the demo in a tmux session with 3 stacked panes"""
     project_root = str(Path(__file__).parent.resolve())
@@ -475,10 +488,10 @@ def run_demo(chrome_bin, log_file=None, transport="webrtc"):
     subprocess.run(["tmux", "select-layout", "-t", session, "even-vertical"])
 
     # Send commands: top=node.py, middle=Chrome, bottom=pnpm dev
-    # Start node.py first and wait briefly for its loading server to bind to port 8080
-    # before launching Chrome, otherwise Chrome gets "connection refused".
+    # Start node.py first and wait for its loading server to accept connections on
+    # port 8080 before launching Chrome, to avoid "connection refused".
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
-    time.sleep(2)
+    _wait_for_port(8080, timeout=30)
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
 
