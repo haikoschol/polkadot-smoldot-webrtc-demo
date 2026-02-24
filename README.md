@@ -8,7 +8,8 @@ to it using Smoldot.
 ## Requirements
 
 - git
-- Rust toolchain
+- Rust toolchain (incl. target `wasm32-unknown-unknown`)
+- protobuf compiler
 - Node.js
 - Python 3
 - tmux (optional, used in the automated demo)
