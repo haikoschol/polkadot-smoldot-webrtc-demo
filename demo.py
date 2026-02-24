@@ -436,7 +436,7 @@ def initialize_demo():
 
 # --- Demo Orchestration ---
 
-def run_demo(chrome_bin):
+def run_demo(chrome_bin, log_file=None, transport="webrtc"):
     """Launch the demo in a tmux session with 3 stacked panes"""
     project_root = str(Path(__file__).parent.resolve())
     papi_console_dir = str(Path(project_root) / "papi-console")
@@ -455,7 +455,9 @@ def run_demo(chrome_bin):
         ' 2>&1 | grep -F SCTP_PACKET | text2pcap -D -t %H:%M:%S.%f -i 132 - "$OUT"'
         f' && "{pcap_analyzer}" --all-messages --analyze-payload --csv "$OUT"'
     )
-    node_cmd = f"python3 {project_root}/node.py --chrome-bin '{chrome_bin}'"
+    node_cmd = f"python3 {project_root}/node.py --chrome-bin '{chrome_bin}' --transport {transport}"
+    if log_file:
+        node_cmd += f" --log-file '{log_file}'"
     pnpm_cmd = "corepack pnpm dev"
 
     print_log("Demo", f"Starting tmux session '{session}'...", Colors.INFO)
@@ -473,7 +475,10 @@ def run_demo(chrome_bin):
     subprocess.run(["tmux", "select-layout", "-t", session, "even-vertical"])
 
     # Send commands: top=node.py, middle=Chrome, bottom=pnpm dev
+    # Start node.py first and wait briefly for its loading server to bind to port 8080
+    # before launching Chrome, otherwise Chrome gets "connection refused".
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
+    time.sleep(2)
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
 
@@ -510,6 +515,17 @@ def main():
         action="store_true",
         help="Run initialization only, then exit"
     )
+    parser.add_argument(
+        "--log-file",
+        default=None,
+        help="Path to write node.py log file (e.g., node.log). Disabled by default."
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["webrtc", "websocket"],
+        default="webrtc",
+        help="Transport for chainspec bootNodes (default: webrtc). Passed through to node.py."
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -531,7 +547,7 @@ def main():
         if args.init_only:
             sys.exit(0)
 
-        run_demo(args.chrome_bin)
+        run_demo(args.chrome_bin, args.log_file, args.transport)
 
     except KeyboardInterrupt:
         print_log("System", "Interrupted by user, shutting down...", Colors.WARN)
