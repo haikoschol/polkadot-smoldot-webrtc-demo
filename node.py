@@ -162,8 +162,29 @@ def fetch_chainspec_from_node():
 
     return None
 
+def rewrite_multiaddr_host(address, public_addr):
+    """Replace the local IP in a multiaddress with a public hostname or IP.
+
+    If public_addr is an IP address, replaces /ip4/<local> with /ip4/<public>.
+    If public_addr is a hostname, replaces /ip4/<local> with /dns4/<hostname>.
+    """
+    if not public_addr:
+        return address
+
+    import ipaddress as ipaddr_mod
+    try:
+        ipaddr_mod.ip_address(public_addr)
+        replacement = f"/ip4/{public_addr}"
+    except ValueError:
+        replacement = f"/dns4/{public_addr}"
+
+    return re.sub(r'^/ip[46]/[^/]+', replacement, address)
+
 def generate_ts_file(address):
     """Fetches chainspec from node and generates TypeScript file with bootnode"""
+
+    # Rewrite address if --public-addr is set
+    address = rewrite_multiaddr_host(address, ARGS.public_addr)
 
     # Fetch chainspec from the running node
     print_log("TS_Gen", "Fetching chainspec from running node...", Colors.TS_GEN)
@@ -324,6 +345,10 @@ if __name__ == "__main__":
 
     parser.add_argument("--transport", choices=["webrtc", "websocket"], default="webrtc",
                         help="Transport to use in chainspec bootNodes (default: webrtc)")
+
+    parser.add_argument("--public-addr", default=None,
+                        help="Public hostname or IP for chainspec bootNodes (e.g., rpc.example.com or 1.2.3.4). "
+                             "Rewrites the local IP in the multiaddress so external clients can connect.")
 
     parser.add_argument("--chrome-bin", default=None,
                         help="Path to Chrome binary. If set, navigates Chrome to the demo URL after the chainspec is generated.")
