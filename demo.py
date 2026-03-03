@@ -449,8 +449,8 @@ def _wait_for_port(port, host="127.0.0.1", timeout=30):
     print_log("Demo", f"Warning: port {port} not ready after {timeout}s, launching Chrome anyway", Colors.WARN)
 
 
-def run_demo(chrome_bin, log_file=None, transport="webrtc"):
-    """Launch the demo in a tmux session with 3 stacked panes"""
+def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=False):
+    """Launch the demo in a tmux session with 2 or 3 stacked panes"""
     project_root = str(Path(__file__).parent.resolve())
     papi_console_dir = str(Path(project_root) / "papi-console")
     session = "polkadot-smoldot-demo"
@@ -459,16 +459,10 @@ def run_demo(chrome_bin, log_file=None, transport="webrtc"):
         print_log("Demo", "Error: tmux is not installed", Colors.ERROR)
         sys.exit(1)
 
-    pcap_analyzer = f"{project_root}/litep2p-perf/target/debug/pcap-analyzer"
-    chrome_cmd = (
-        f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest http://localhost:8080'
-        " --auto-open-devtools-for-tabs"
-        " --enable-logging=stderr --log-level=0 --v=0"
-        " --vmodule='*/webrtc/*=1'"
-        ' 2>&1 | grep -F SCTP_PACKET | text2pcap -D -t %H:%M:%S.%f -i 132 - "$OUT"'
-        f' && "{pcap_analyzer}" --all-messages --analyze-payload --csv "$OUT"'
-    )
-    node_cmd = f"python3 {project_root}/node.py --chrome-bin '{chrome_bin}' --transport {transport}"
+    node_cmd = f"python3 {project_root}/node.py"
+    if chrome_bin:
+        node_cmd += f" --chrome-bin '{chrome_bin}'"
+    node_cmd += f" --transport {transport}"
     if log_file:
         node_cmd += f" --log-file '{log_file}'"
     pnpm_cmd = "corepack pnpm dev"
@@ -478,22 +472,36 @@ def run_demo(chrome_bin, log_file=None, transport="webrtc"):
     # Create new detached session; pane 0.0 will be the top pane (node.py)
     subprocess.run(["tmux", "new-session", "-d", "-s", session, "-c", project_root])
 
-    # Split pane 0.0 to create pane 0.1 below it (Chrome, middle)
-    subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.0", "-c", project_root])
+    # Split pane 0.0 to create pane 0.1 below it (papi-console or Chrome)
+    subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.0", "-c", papi_console_dir if no_browser else project_root])
 
-    # Split pane 0.1 to create pane 0.2 below it (pnpm dev, bottom)
-    subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.1", "-c", papi_console_dir])
+    if not no_browser:
+        pcap_analyzer = f"{project_root}/litep2p-perf/target/debug/pcap-analyzer"
+        chrome_cmd = (
+            f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest http://localhost:8080'
+            " --auto-open-devtools-for-tabs"
+            " --enable-logging=stderr --log-level=0 --v=0"
+            " --vmodule='*/webrtc/*=1'"
+            ' 2>&1 | grep -F SCTP_PACKET | text2pcap -D -t %H:%M:%S.%f -i 132 - "$OUT"'
+            f' && "{pcap_analyzer}" --all-messages --analyze-payload --csv "$OUT"'
+        )
+
+        # Split pane 0.1 to create pane 0.2 below it (pnpm dev, bottom)
+        subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.1", "-c", papi_console_dir])
 
     # Even out pane heights
     subprocess.run(["tmux", "select-layout", "-t", session, "even-vertical"])
 
-    # Send commands: top=node.py, middle=Chrome, bottom=pnpm dev
     # Start node.py first and wait for its loading server to accept connections on
     # port 8080 before launching Chrome, to avoid "connection refused".
     subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
-    _wait_for_port(8080, timeout=30)
-    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
-    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
+
+    if no_browser:
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", pnpm_cmd, "C-m"])
+    else:
+        _wait_for_port(8080, timeout=30)
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
 
     print_log("Demo", "Attaching to tmux session...", Colors.SUCCESS)
 
@@ -509,6 +517,7 @@ def main():
         epilog=(
             "examples:\n"
             "  python3 demo.py --init-only\n"
+            "  python3 demo.py --no-browser\n"
             "  python3 demo.py /Applications/Google\\ Chrome.app/Contents/MacOS/Google\\ Chrome\n"
             "  python3 demo.py /path/to/chrome --skip-init\n"
         )
@@ -516,7 +525,7 @@ def main():
     parser.add_argument(
         "chrome_bin",
         nargs="?",
-        help="Path to the Chrome binary. Required unless --init-only is set."
+        help="Path to the Chrome binary. Required unless --init-only or --no-browser is set."
     )
     parser.add_argument(
         "--skip-init",
@@ -539,6 +548,11 @@ def main():
         default="webrtc",
         help="Transport for chainspec bootNodes (default: webrtc). Passed through to node.py."
     )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Skip Chrome; split tmux into two panes only (node.py top, papi-console bottom)."
+    )
 
     if len(sys.argv) == 1:
         parser.print_help()
@@ -546,7 +560,7 @@ def main():
 
     args = parser.parse_args()
 
-    if not args.init_only and not args.chrome_bin:
+    if not args.init_only and not args.no_browser and not args.chrome_bin:
         parser.print_help()
         sys.exit(1)
 
@@ -560,7 +574,7 @@ def main():
         if args.init_only:
             sys.exit(0)
 
-        run_demo(args.chrome_bin, args.log_file, args.transport)
+        run_demo(args.chrome_bin, args.log_file, args.transport, args.no_browser)
 
     except KeyboardInterrupt:
         print_log("System", "Interrupted by user, shutting down...", Colors.WARN)

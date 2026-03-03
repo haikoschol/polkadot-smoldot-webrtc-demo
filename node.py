@@ -359,11 +359,10 @@ if __name__ == "__main__":
     ARGS = parser.parse_args()
     LOG_FILE = ARGS.log_file
 
-    # Start loading page server when running as part of the automated demo
-    if ARGS.chrome_bin:
-        server_thread = threading.Thread(target=start_loading_server, daemon=True)
-        server_thread.start()
-        print_log("System", f"Loading page available at http://localhost:{LOADING_PORT}", Colors.SUCCESS)
+    # Start loading page server
+    server_thread = threading.Thread(target=start_loading_server, daemon=True)
+    server_thread.start()
+    print_log("System", f"Loading page available at http://localhost:{LOADING_PORT}", Colors.SUCCESS)
 
     # Initialize log file only when --log-file is passed
     if LOG_FILE:
