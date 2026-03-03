@@ -364,6 +364,11 @@ if __name__ == "__main__":
     server_thread.start()
     print_log("System", f"Loading page available at http://localhost:{LOADING_PORT}", Colors.SUCCESS)
 
+    # Navigate Chrome to loading page now that the server is guaranteed to be running
+    if ARGS.chrome_bin:
+        print_log("System", f"Navigating Chrome to http://localhost:{LOADING_PORT}", Colors.SUCCESS)
+        subprocess.Popen([ARGS.chrome_bin, f"http://localhost:{LOADING_PORT}"])
+
     # Initialize log file only when --log-file is passed
     if LOG_FILE:
         try:

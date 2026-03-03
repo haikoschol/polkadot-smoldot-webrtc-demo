@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import argparse
-import socket
 import subprocess
 import threading
 import sys
@@ -450,18 +449,6 @@ def initialize_demo():
 
 # --- Demo Orchestration ---
 
-def _wait_for_port(port, host="127.0.0.1", timeout=30):
-    """Block until a TCP connection to host:port succeeds, or timeout expires."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            with socket.create_connection((host, port), timeout=1):
-                return
-        except OSError:
-            time.sleep(0.25)
-    print_log("Demo", f"Warning: port {port} not ready after {timeout}s, launching Chrome anyway", Colors.WARN)
-
-
 def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=False):
     """Launch the demo in a tmux session with 2 or 3 stacked panes"""
     project_root = str(Path(__file__).parent.resolve())
@@ -491,7 +478,7 @@ def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=Fals
     if not no_browser:
         pcap_analyzer = f"{project_root}/pcap-analyzer/target/debug/pcap-analyzer"
         chrome_cmd = (
-            f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest http://localhost:8080'
+            f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest'
             " --auto-open-devtools-for-tabs"
             " --enable-logging=stderr --log-level=0 --v=0"
             " --vmodule='*/webrtc/*=1'"
@@ -505,16 +492,17 @@ def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=Fals
     # Even out pane heights
     subprocess.run(["tmux", "select-layout", "-t", session, "even-vertical"])
 
-    # Start node.py first and wait for its loading server to accept connections on
-    # port 8080 before launching Chrome, to avoid "connection refused".
-    subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
-
     if no_browser:
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
         subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", pnpm_cmd, "C-m"])
     else:
-        _wait_for_port(8080, timeout=30)
+        # Start Chrome first (without a URL), then node.py. Once node.py's loading
+        # server is up it navigates Chrome to the loading page via --chrome-bin, the
+        # same way it later navigates to papi-console. This avoids the race between
+        # Chrome startup and the loading server becoming available.
         subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.1", chrome_cmd, "C-m"])
         subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.2", pnpm_cmd, "C-m"])
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:0.0", node_cmd, "C-m"])
 
     print_log("Demo", "Attaching to tmux session...", Colors.SUCCESS)
 
