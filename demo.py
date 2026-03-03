@@ -55,6 +55,11 @@ def check_node_modules_exists(path):
     node_modules = Path(path) / "node_modules"
     return node_modules.exists() and node_modules.is_dir()
 
+def check_dist_exists(path):
+    """Check if dist directory exists"""
+    dist_path = Path(path) / "dist"
+    return dist_path.exists() and dist_path.is_dir()
+
 # --- Task Execution Functions ---
 
 def task_clone_repo(url, branch, dest, task_result):
@@ -191,13 +196,9 @@ def task_npm_build(work_dir, task_result, dependency=None):
                 task_result.completed.set()
                 return
 
-        for npm_cmd in [["npm", "install"], ["npm", "run", "build"]]:
-            if INIT_FAILED.is_set():
-                return
-
+        def run_npm_cmd(npm_cmd):
             cmd_str = " ".join(npm_cmd)
             print_log("NPM", f"Running '{cmd_str}' in {work_dir}...", Colors.BUILD)
-
             process = subprocess.Popen(
                 npm_cmd,
                 cwd=work_dir,
@@ -206,12 +207,10 @@ def task_npm_build(work_dir, task_result, dependency=None):
                 text=True,
                 bufsize=1
             )
-
             while True:
                 if INIT_FAILED.is_set():
                     process.terminate()
-                    return
-
+                    return False
                 line = process.stdout.readline()
                 if not line and process.poll() is not None:
                     break
@@ -219,13 +218,29 @@ def task_npm_build(work_dir, task_result, dependency=None):
                     clean_line = line.strip()
                     if clean_line:
                         print_log("NPM", f"[{Path(work_dir).name}] {clean_line}", Colors.BUILD)
-
             rc = process.poll()
             if rc != 0:
                 error_msg = f"'{cmd_str}' failed in {work_dir} (exit code {rc})"
                 print_log("NPM", error_msg, Colors.ERROR)
                 task_result.error_message = error_msg
                 INIT_FAILED.set()
+                return False
+            return True
+
+        # npm install
+        if check_node_modules_exists(work_dir):
+            print_log("NPM", f"node_modules in {work_dir} already exists, skipping install", Colors.SUCCESS)
+        else:
+            if not run_npm_cmd(["npm", "install"]):
+                return
+
+        # npm run build
+        if INIT_FAILED.is_set():
+            return
+        if check_dist_exists(work_dir):
+            print_log("NPM", f"dist in {work_dir} already exists, skipping build", Colors.SUCCESS)
+        else:
+            if not run_npm_cmd(["npm", "run", "build"]):
                 return
 
         print_log("NPM", f"Successfully built {work_dir}", Colors.SUCCESS)
