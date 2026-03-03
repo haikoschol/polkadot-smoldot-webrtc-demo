@@ -1,7 +1,7 @@
 .DS_Store
 polkadot-sdk
 papi-console
-litep2p-perf
+pcap-analyzer/target
 smoldot
 dev-chain-spec.json
 .idea

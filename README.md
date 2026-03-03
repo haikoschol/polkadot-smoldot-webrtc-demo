@@ -82,10 +82,10 @@ Once running, follow the instructions in the "Automated Demo" section. Make sure
 
 ### Analyze WebRTC Traffic
 
-- clone [`ChainSafe/litep2p-perf`](https://github.com/ChainSafe/litep2p-perf) and check out the branch `haiko-capture-traffic` (e.g. in directory `./litep2p-perf`)
-- run `pcap-analyzer` on the `.pcapng` file (`cd litep2p-perf && cargo run -p smoldot-automation --bin pcap-analyzer -- --all-messages ../webrtc-demo-<timestamp>.pcapng`)
+- build the pcap-analyzer (`cd pcap-analyzer && cargo build`)
+- run `pcap-analyzer` on the `.pcapng` file (`cd pcap-analyzer && cargo run -- --all-messages ../webrtc-demo-<timestamp>.pcapng`)
 - there's probably a lot of messages so try the CSV export (`--csv`)
-- open the `.pcapng` file in Wireshark (configure it to parse the schema in `./litep2p-perf/smoldot-automation/protobuf/webrtc.proto`)
+- open the `.pcapng` file in Wireshark (configure it to parse the schema in `./pcap-analyzer/protobuf/webrtc.proto`)
 
 ### Using WebSocket transport instead of WebRTC
 

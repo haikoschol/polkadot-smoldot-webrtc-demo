@@ -355,7 +355,6 @@ def initialize_demo():
     repos = [
         ("https://github.com/ChainSafe/polkadot-sdk", "haiko-webrtc-demo", "./polkadot-sdk"),
         ("https://github.com/haikoschol/papi-console", "webrtc-demo", "./papi-console"),
-        ("https://github.com/ChainSafe/litep2p-perf", "haiko-capture-traffic", "./litep2p-perf"),
         ("https://github.com/ChainSafe/smoldot", "haiko-webrtc-deadlock-fix", "./smoldot"),
     ]
 
@@ -398,13 +397,12 @@ def initialize_demo():
 
     pcap_thread = threading.Thread(
         target=task_cargo_build_bin,
-        args=("./litep2p-perf", "smoldot-automation", "./litep2p-perf/target/debug/pcap-analyzer", pcap_result, clone_results[2]),
-        kwargs={"bin_name": "pcap-analyzer"}
+        args=("./pcap-analyzer", "pcap-analyzer", "./pcap-analyzer/target/debug/pcap-analyzer", pcap_result)
     )
 
     smoldot_wasm_thread = threading.Thread(
         target=task_npm_build,
-        args=("./smoldot/wasm-node/javascript", smoldot_wasm_result, clone_results[3])
+        args=("./smoldot/wasm-node/javascript", smoldot_wasm_result, clone_results[2])
     )
 
     # pnpm install waits for both the papi-console clone and the smoldot wasm build
@@ -491,7 +489,7 @@ def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=Fals
     subprocess.run(["tmux", "split-window", "-v", "-t", f"{session}:0.0", "-c", papi_console_dir if no_browser else project_root])
 
     if not no_browser:
-        pcap_analyzer = f"{project_root}/litep2p-perf/target/debug/pcap-analyzer"
+        pcap_analyzer = f"{project_root}/pcap-analyzer/target/debug/pcap-analyzer"
         chrome_cmd = (
             f'OUT="out-$(date +%s).pcapng"; "{chrome_bin}" --guest http://localhost:8080'
             " --auto-open-devtools-for-tabs"

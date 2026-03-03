@@ -1,0 +1,15 @@
+[package]
+name = "pcap-analyzer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+comfy-table = "7.1"
+pcap-file = "2.0"
+prost = "0.13"
+
+[build-dependencies]
+prost-build = "0.13"
