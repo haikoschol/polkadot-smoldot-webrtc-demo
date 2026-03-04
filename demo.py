@@ -61,8 +61,33 @@ def check_dist_exists(path):
 
 # --- Task Execution Functions ---
 
-def task_clone_repo(url, branch, dest, task_result):
-    """Clone a repository with shallow clone"""
+def is_commit_hash(ref):
+    """Check if a ref looks like a commit hash (7-40 hex characters)"""
+    return len(ref) >= 7 and len(ref) <= 40 and all(c in "0123456789abcdefABCDEF" for c in ref)
+
+def run_git_streaming(cmd, dest, cwd=None):
+    """Run a git command, streaming output. Returns the exit code."""
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+    while True:
+        if INIT_FAILED.is_set():
+            process.terminate()
+            return -1
+        line = process.stdout.readline()
+        if not line and process.poll() is not None:
+            break
+        if line:
+            print_log("Clone", f"[{Path(dest).name}] {line.strip()}", Colors.CLONE)
+    return process.poll()
+
+def task_clone_repo(url, ref, dest, task_result):
+    """Clone a repository at a branch or commit with shallow clone"""
     try:
         # Check if already cloned
         if check_repo_exists(dest):
@@ -71,39 +96,39 @@ def task_clone_repo(url, branch, dest, task_result):
             task_result.completed.set()
             return
 
-        print_log("Clone", f"Cloning {url} (branch: {branch})...", Colors.CLONE)
-
-        cmd = ["git", "clone", "--branch", branch, "--depth", "1", url, dest]
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
-
-        # Stream output
-        while True:
-            if INIT_FAILED.is_set():
-                process.terminate()
+        if is_commit_hash(ref):
+            ref_type = "commit"
+            print_log("Clone", f"Cloning {url} (commit: {ref})...", Colors.CLONE)
+            # For commits, use init + fetch --depth 1 to get a shallow clone
+            os.makedirs(dest, exist_ok=True)
+            for cmd in [
+                ["git", "init"],
+                ["git", "remote", "add", "origin", url],
+                ["git", "fetch", "--depth", "1", "origin", ref],
+                ["git", "checkout", "FETCH_HEAD"],
+            ]:
+                rc = run_git_streaming(cmd, dest, cwd=dest)
+                if rc != 0:
+                    error_msg = f"Failed to clone {url} at commit {ref} ('{' '.join(cmd)}' exit code {rc})"
+                    print_log("Clone", error_msg, Colors.ERROR)
+                    task_result.error_message = error_msg
+                    INIT_FAILED.set()
+                    return
+        else:
+            ref_type = "branch"
+            print_log("Clone", f"Cloning {url} (branch: {ref})...", Colors.CLONE)
+            rc = run_git_streaming(
+                ["git", "clone", "--branch", ref, "--depth", "1", url, dest], dest
+            )
+            if rc != 0:
+                error_msg = f"Failed to clone {url} (exit code {rc})"
+                print_log("Clone", error_msg, Colors.ERROR)
+                task_result.error_message = error_msg
+                INIT_FAILED.set()
                 return
 
-            line = process.stdout.readline()
-            if not line and process.poll() is not None:
-                break
-            if line:
-                clean_line = line.strip()
-                print_log("Clone", f"[{Path(dest).name}] {clean_line}", Colors.CLONE)
-
-        rc = process.poll()
-        if rc == 0:
-            print_log("Clone", f"Successfully cloned {dest}", Colors.SUCCESS)
-            task_result.success = True
-        else:
-            error_msg = f"Failed to clone {url} (exit code {rc})"
-            print_log("Clone", error_msg, Colors.ERROR)
-            task_result.error_message = error_msg
-            INIT_FAILED.set()
+        print_log("Clone", f"Successfully cloned {dest} ({ref_type}: {ref})", Colors.SUCCESS)
+        task_result.success = True
 
     except Exception as e:
         error_msg = f"Exception cloning {url}: {e}"
@@ -354,7 +379,8 @@ def initialize_demo():
     repos = [
         ("https://github.com/ChainSafe/polkadot-sdk", "haiko-latest-str0m-test", "./polkadot-sdk"),
         ("https://github.com/haikoschol/papi-console", "webrtc-demo", "./papi-console"),
-        ("https://github.com/ChainSafe/smoldot", "haiko-webrtc-deadlock-fix", "./smoldot"),
+        #("https://github.com/ChainSafe/smoldot", "haiko-webrtc-deadlock-fix", "./smoldot"),
+        ("https://github.com/ChainSafe/smoldot", "9f780db9f7359aed83db8d8a891765865990fe37", "./smoldot"),
     ]
 
     # Phase 1: Clone repositories in parallel
