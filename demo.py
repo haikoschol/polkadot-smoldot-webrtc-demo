@@ -352,7 +352,7 @@ def initialize_demo():
 
     # Repository configuration
     repos = [
-        ("https://github.com/ChainSafe/polkadot-sdk", "haiko-webrtc-demo", "./polkadot-sdk"),
+        ("https://github.com/ChainSafe/polkadot-sdk", "haiko-latest-str0m-test", "./polkadot-sdk"),
         ("https://github.com/haikoschol/papi-console", "webrtc-demo", "./papi-console"),
         ("https://github.com/ChainSafe/smoldot", "haiko-webrtc-deadlock-fix", "./smoldot"),
     ]
