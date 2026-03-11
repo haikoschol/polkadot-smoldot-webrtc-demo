@@ -449,7 +449,7 @@ def initialize_demo():
 
 # --- Demo Orchestration ---
 
-def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=False):
+def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=False, public_addr=None):
     """Launch the demo in a tmux session with 2 or 3 stacked panes"""
     project_root = str(Path(__file__).parent.resolve())
     papi_console_dir = str(Path(project_root) / "papi-console")
@@ -463,6 +463,8 @@ def run_demo(chrome_bin=None, log_file=None, transport="webrtc", no_browser=Fals
     if chrome_bin:
         node_cmd += f" --chrome-bin '{chrome_bin}'"
     node_cmd += f" --transport {transport}"
+    if public_addr:
+        node_cmd += f" --public-addr '{public_addr}'"
     if log_file:
         node_cmd += f" --log-file '{log_file}'"
     pnpm_cmd = "corepack pnpm dev"
@@ -550,6 +552,11 @@ def main():
         help="Transport for chainspec bootNodes (default: webrtc). Passed through to node.py."
     )
     parser.add_argument(
+        "--public-addr",
+        default=None,
+        help="Public hostname or IP for chainspec bootNodes. Passed through to node.py."
+    )
+    parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Skip Chrome; split tmux into two panes only (node.py top, papi-console bottom)."
@@ -575,7 +582,7 @@ def main():
         if args.init_only:
             sys.exit(0)
 
-        run_demo(args.chrome_bin, args.log_file, args.transport, args.no_browser)
+        run_demo(args.chrome_bin, args.log_file, args.transport, args.no_browser, args.public_addr)
 
     except KeyboardInterrupt:
         print_log("System", "Interrupted by user, shutting down...", Colors.WARN)
